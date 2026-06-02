@@ -7,6 +7,16 @@ from supabase import Client, create_client
 
 load_dotenv()
 
+FRONTEND_URL = os.getenv("FRONTEND_URL")
+
+allowed_origins = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+]
+
+if FRONTEND_URL:
+    allowed_origins.append(FRONTEND_URL.rstrip("/"))
+
 
 def create_supabase_client() -> Client | None:
     supabase_url = os.getenv("SUPABASE_URL")
@@ -23,10 +33,7 @@ CORS(
     app,
     resources={
         r"/api/*": {
-            "origins": [
-                "http://localhost:5173",
-                "http://localhost:5174",
-            ]
+            "origins": allowed_origins
         }
     },
 )
