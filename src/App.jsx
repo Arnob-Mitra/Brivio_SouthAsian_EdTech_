@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
+import { getGrowthPlansByEmail, saveGrowthPlan } from './services/api'
 
 const STORAGE_KEY = 'brivio-mvp-session'
 
@@ -93,6 +94,7 @@ const stepLabels = {
   growth: 2,
   preferences: 3,
   confirmation: 4,
+  savedPlans: 4,
 }
 
 const heroChips = ['Focus Better', 'Learn Smarter', 'Grow Confidently']
@@ -112,6 +114,8 @@ function App() {
   const [returnPage, setReturnPage] = useState('login')
   const [formData, setFormData] = useState(storedState?.formData || defaultFormState)
   const [errors, setErrors] = useState({})
+  const [isSavingPlan, setIsSavingPlan] = useState(false)
+  const [saveStatus, setSaveStatus] = useState({ type: '', message: '' })
 
   useEffect(() => {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ currentPage, formData }))
@@ -131,11 +135,26 @@ function App() {
     setErrors({})
   }
 
+  const buildPlanPayload = () => ({
+    email: formData.email,
+    full_name: formData.fullName,
+    country: formData.country,
+    education_level: formData.educationLevel,
+    main_goal: formData.mainGoal,
+    growth_areas: formData.selectedGrowthAreas,
+    daily_time: formData.preferredDailyTime,
+    learning_style: formData.learningStyle,
+    motivation_style: formData.motivationStyle,
+    consent_given: formData.consent,
+    recommendation,
+  })
+
   const goBack = () => {
     if (currentPage === 'details') navigateTo('login')
     if (currentPage === 'growth') navigateTo('details')
     if (currentPage === 'preferences') navigateTo('growth')
     if (currentPage === 'confirmation') navigateTo('preferences')
+    if (currentPage === 'savedPlans') navigateTo('confirmation')
     if (currentPage === 'unsuccessful') navigateTo('preferences')
   }
 
@@ -144,7 +163,34 @@ function App() {
     setFormData(defaultFormState)
     setErrors({})
     setReturnPage('login')
+    setSaveStatus({ type: '', message: '' })
+    setIsSavingPlan(false)
     setCurrentPage('login')
+  }
+
+  const handleSavePlan = async () => {
+    setIsSavingPlan(true)
+    setSaveStatus({ type: '', message: '' })
+
+    try {
+      await saveGrowthPlan(buildPlanPayload())
+      setSaveStatus({
+        type: 'success',
+        message: 'Your Brivio Growth Plan has been saved successfully.',
+      })
+    } catch {
+      setSaveStatus({
+        type: 'error',
+        message: 'Unable to save your plan. Please try again.',
+      })
+    } finally {
+      setIsSavingPlan(false)
+    }
+  }
+
+  const openSavedPlans = () => {
+    setSaveStatus({ type: '', message: '' })
+    navigateTo('savedPlans')
   }
 
   const openEthics = () => {
@@ -242,7 +288,11 @@ function App() {
   return (
     <div className="app-shell">
       {currentPage !== 'login' && currentPage !== 'ethics' && (
-        <Header currentStep={currentStep} onBack={goBack} showBack={currentPage !== 'confirmation'} />
+        <Header
+          currentStep={currentStep}
+          onBack={goBack}
+          showBack={currentPage !== 'confirmation'}
+        />
       )}
 
       {currentPage === 'login' && (
@@ -284,9 +334,17 @@ function App() {
           formData={formData}
           recommendation={recommendation}
           activities={activities}
+          isSavingPlan={isSavingPlan}
+          saveStatus={saveStatus}
+          onSavePlan={handleSavePlan}
+          onViewSavedPlans={openSavedPlans}
           onStartAgain={resetApp}
           onOpenEthics={openEthics}
         />
+      )}
+
+      {currentPage === 'savedPlans' && (
+        <SavedPlansPage onBack={() => navigateTo('confirmation')} onStartAgain={resetApp} />
       )}
 
       {currentPage === 'unsuccessful' && <UnsuccessfulPage onBack={goBack} onStartAgain={resetApp} />}
@@ -554,7 +612,17 @@ function PreferencesPage({ formData, errors, onChange, onSubmit, onBack }) {
   )
 }
 
-function ConfirmationPage({ formData, recommendation, activities, onStartAgain, onOpenEthics }) {
+function ConfirmationPage({
+  formData,
+  recommendation,
+  activities,
+  isSavingPlan,
+  saveStatus,
+  onSavePlan,
+  onViewSavedPlans,
+  onStartAgain,
+  onOpenEthics,
+}) {
   return (
     <main className="page">
       <section className="content-card surface-card">
@@ -600,9 +668,120 @@ function ConfirmationPage({ formData, recommendation, activities, onStartAgain, 
           </div>
         </section>
 
-        <div className="form-actions split-actions top-space">
+        <div className="confirmation-feedback">
+          {saveStatus.message && (
+            <p className={`status-message ${saveStatus.type === 'error' ? 'status-message-error' : 'status-message-success'}`}>
+              {saveStatus.message}
+            </p>
+          )}
+        </div>
+
+        <div className="form-actions split-actions top-space confirmation-actions">
+          <Button onClick={onSavePlan} disabled={isSavingPlan}>
+            {isSavingPlan ? 'Saving...' : 'Save My Growth Plan'}
+          </Button>
+          <Button onClick={onViewSavedPlans}>View Saved Plans</Button>
           <Button variant="secondary" onClick={onStartAgain}>Start Again</Button>
+        </div>
+
+        <div className="form-actions top-space">
           <Button onClick={onOpenEthics}>View Ethics & Privacy</Button>
+        </div>
+      </section>
+    </main>
+  )
+}
+
+function SavedPlansPage({ onBack, onStartAgain }) {
+  const [email, setEmail] = useState('')
+  const [plans, setPlans] = useState([])
+  const [searchState, setSearchState] = useState({ status: 'idle', message: '' })
+
+  const handleSearch = async (event) => {
+    event.preventDefault()
+
+    if (!email.trim()) {
+      setSearchState({ status: 'error', message: 'Please enter an email address to search for saved plans.' })
+      setPlans([])
+      return
+    }
+
+    setSearchState({ status: 'loading', message: '' })
+
+    try {
+      const response = await getGrowthPlansByEmail(email.trim())
+      const savedPlans = Array.isArray(response?.data)
+        ? response.data
+        : Array.isArray(response?.data?.plans)
+          ? response.data.plans
+          : []
+
+      setPlans(savedPlans)
+      setSearchState(
+        savedPlans.length
+          ? { status: 'success', message: '' }
+          : { status: 'empty', message: 'No plans found for this email address.' },
+      )
+    } catch {
+      setPlans([])
+      setSearchState({ status: 'error', message: 'Unable to retrieve saved plans. Please try again.' })
+    }
+  }
+
+  return (
+    <main className="page">
+      <section className="content-card surface-card">
+        <PageIntro
+          step="Saved Plans"
+          title="View Saved Brivio Growth Plans"
+          description="Search by email to retrieve growth plans saved through the backend API."
+        />
+
+        <form className="saved-plans-search" onSubmit={handleSearch} noValidate>
+          <InputField
+            id="savedPlansEmail"
+            label="Email"
+            type="email"
+            placeholder="student@example.com"
+            value={email}
+            error={searchState.status === 'error' && !plans.length ? searchState.message : ''}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+          <div className="saved-plans-search-action">
+            <Button type="submit">{searchState.status === 'loading' ? 'Searching...' : 'Search'}</Button>
+          </div>
+        </form>
+
+        {searchState.status === 'loading' && <p className="saved-plans-state">Loading saved plans...</p>}
+        {searchState.status === 'empty' && <p className="saved-plans-state">No plans found for this email address.</p>}
+        {searchState.status === 'success' && <p className="saved-plans-state">Saved plans found.</p>}
+
+        {plans.length > 0 && (
+          <div className="saved-plans-grid top-space">
+            {plans.map((plan, index) => (
+              <article key={plan.id || `${plan.email || 'plan'}-${index}`} className="info-card saved-plan-card">
+                <h2>{plan.full_name || 'Saved Growth Plan'}</h2>
+                <SummaryRow label="Student name" value={plan.full_name || '—'} />
+                <SummaryRow label="Country" value={plan.country || '—'} />
+                <SummaryRow label="Education level" value={plan.education_level || '—'} />
+                <SummaryRow label="Main goal" value={plan.main_goal || '—'} />
+                <SummaryRow
+                  label="Selected growth areas"
+                  value={Array.isArray(plan.growth_areas) ? plan.growth_areas.join(', ') : plan.growth_areas || '—'}
+                />
+                <SummaryRow label="Daily time" value={plan.daily_time || '—'} />
+                <SummaryRow label="Learning style" value={plan.learning_style || '—'} />
+                <SummaryRow label="Motivation style" value={plan.motivation_style || '—'} />
+                <SummaryRow label="Recommendation" value={plan.recommendation || '—'} />
+                <SummaryRow label="Created date" value={formatCreatedDate(plan.created_at || plan.createdAt)} />
+              </article>
+            ))}
+          </div>
+        )}
+
+        <div className="form-actions split-actions top-space">
+          <Button variant="secondary" onClick={onBack}>Back to Plan</Button>
+          <Button variant="secondary" onClick={onStartAgain}>Start Again</Button>
         </div>
       </section>
     </main>
@@ -672,8 +851,17 @@ function PageIntro({ step, title, description }) {
   )
 }
 
-function Button({ children, variant = 'primary', type = 'button', onClick, className = '' }) {
-  return <button type={type} className={`button button-${variant} ${className}`.trim()} onClick={onClick}>{children}</button>
+function Button({ children, variant = 'primary', type = 'button', onClick, className = '', disabled = false }) {
+  return (
+    <button
+      type={type}
+      className={`button button-${variant} ${className}`.trim()}
+      onClick={onClick}
+      disabled={disabled}
+    >
+      {children}
+    </button>
+  )
 }
 
 function InputField({ id, label, error, ...props }) {
@@ -714,6 +902,13 @@ function GrowthCard({ area, isSelected, onClick }) {
 
 function SummaryRow({ label, value }) {
   return <div className="summary-row"><span>{label}</span><strong>{value}</strong></div>
+}
+
+function formatCreatedDate(value) {
+  if (!value) return '—'
+
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 
 function buildRecommendation(formData) {
