@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { getGrowthPlansByEmail, saveGrowthPlan } from './services/api'
+import brivioLogo from './assets/brivio-logo.png'
 
 const STORAGE_KEY = 'brivio-mvp-session'
 
@@ -358,7 +359,7 @@ function Header({ currentStep, onBack, showBack }) {
   return (
     <header className="app-header surface-card">
       <div className="brand-inline">
-        <img src="/brivio-logo.png" alt="Brivio logo" className="header-logo" />
+        <img src={brivioLogo} alt="Brivio logo" className="header-logo" />
         <div>
           <p className="eyebrow">Brivio</p>
           <h2>Learn • Grow • Thrive</h2>
@@ -405,7 +406,7 @@ function LoginPage({ formData, errors, onChange, onSubmit, onOpenEthics }) {
     <main className="page login-page">
       <section className="login-layout">
         <div className="login-panel login-copy-panel">
-          <img src="/brivio-logo.png" alt="Brivio logo" className="hero-logo" />
+          <img src={brivioLogo} alt="Brivio logo" className="hero-logo" />
           <p className="eyebrow">Welcome to Brivio</p>
           <h1>Learn • Grow • Thrive</h1>
           <p className="subheadline">A smart growth platform for students.</p>
